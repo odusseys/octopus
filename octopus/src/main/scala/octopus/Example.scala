@@ -25,21 +25,15 @@ object Example {
     val rdd = sc.parallelize(1 to partitions, partitions)
     rdd.collect().foreach(println)
 
-    val data = (1 to 1000).toList
-    val bcData = sc.broadcast(data)
-
-    def job(i: Int, data: List[Int]) = {
+    def job(i: Int, data: Iterable[Int]) = {
       data.map(_ * i).sum
     }
 
-    val jobs = (1 to partitions).map(i => (list: Iterable[Int]) => job(i, data)).toSeq
+    val jobs = (1 to partitions).map(i => (list: Iterable[Int]) => job(i, list)).toSeq
 
-    val rslts = rdd.mapPartitionsWithIndex { case (i, useless) =>
-      Iterator(jobs(i)(bcData.value))
-    }.collect()
-    // rslts.foreach(println)
 
-    println("with my method")
+    val u = Iterable(1, 2, 3)
+    val v = u.view.map(i => i.toDouble).force
 
     val toDeploy = 1 to 1000 toList
 
@@ -55,7 +49,7 @@ object Example {
 
     println("comparson")
 
-    jobs.map(j => j(toDeploy.map(_ + 1).filter(_ % 2 == 0))).zip(rsltsjob).foreach(println)
+    jobs.map(j => j(toDeploy.map(_ + 100).filter(_ % 2 == 0))).zip(rsltsjob).foreach(println)
 
   }
 

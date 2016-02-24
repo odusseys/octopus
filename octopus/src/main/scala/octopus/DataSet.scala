@@ -2,6 +2,8 @@ package main.scala.octopus
 
 import org.apache.spark.SparkContext
 
+import scala.io.Source
+
 /**
  * Created by umizrahi on 24/02/2016.
  */
@@ -12,6 +14,7 @@ sealed trait DataSet[T] extends Serializable {
 
   def getContext: SparkContext
 
+  /** Executes all the jobs provided by sending them to the executors for parallelization. */
   def execute[S](jobs: Seq[Iterable[T] => S]): Seq[S] = {
     val nJobs = jobs.length
     val bcData = getContext.broadcast(this)
@@ -35,6 +38,7 @@ sealed trait DataSet[T] extends Serializable {
 
 class DeployedDataSet[T](data: Iterable[T])(@transient sc: SparkContext) extends DataSet[T] {
   println("SIZE :::: " + data.size)
+
   override private[octopus] def transform[S](transformation: Transformation[T, S]): DataSet[S] =
     new TransformedDataSet(this, transformation)
 
@@ -43,7 +47,7 @@ class DeployedDataSet[T](data: Iterable[T])(@transient sc: SparkContext) extends
   override def getContext = sc
 }
 
-class TransformedDataSet[T, S](origin: DeployedDataSet[T], transformation: Transformation[T, S]) extends DataSet[S] {
+class TransformedDataSet[T, S](origin: DataSet[T], transformation: Transformation[T, S]) extends DataSet[S] {
   override private[octopus] def transform[U](transformation: Transformation[S, U]): DataSet[U] = {
     println("TRANSFORMING with " + transformation.getClass)
     new TransformedDataSet(origin, this.transformation.andThen(transformation))
@@ -51,17 +55,22 @@ class TransformedDataSet[T, S](origin: DeployedDataSet[T], transformation: Trans
 
 
   override def getData: Iterable[S] = {
-    println("FETCHING DATA ! Transformation " + transformation.getClass)
-
-    val dat = transformation.transform(origin.getData)
-    println(dat.size + " " + origin.getData.size)
-    dat
+    transformation.transform(origin.getData.view).force
   }
 
   override def getContext = origin.getContext
 
 }
 
+/*Probably not a good solution at all, may want to import at creation and impose that data is on driver considering that the
+* source of file may not allow concurrent requests at all. */
+class TextDataSet(file: java.io.File)(@transient sc: SparkContext) extends DataSet[String] {
+  override private[octopus] def transform[S](transformation: Transformation[String, S]): DataSet[S] = new TransformedDataSet(this, transformation)
+
+  override private[octopus] def getData: Iterable[String] = Source.fromFile(file).getLines().toIterable
+
+  override def getContext: SparkContext = sc
+}
 
 
 object DataSet {
