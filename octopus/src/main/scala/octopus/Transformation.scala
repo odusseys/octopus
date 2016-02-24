@@ -57,9 +57,4 @@ class LazyMap[T, S](f: T => S) extends LazyTransformation[T, S] {
   override def transform(data: IterableView[T, Iterable[_]]) = data.map(f)
 }
 
-object testy {
-  def main(args: Array[String]) {
-    val t = new LazyMap((i: Int) => i + 2.0)
-    println(t.transform(Iterable(1, 2, 3, 4, 5).view).force)
-  }
-}
+
