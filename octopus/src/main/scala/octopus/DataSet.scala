@@ -50,7 +50,6 @@ sealed trait DataSet[T] extends Serializable {
 }
 
 class DeployedDataSet[T](data: Iterable[T])(@transient sc: SparkContext) extends DataSet[T] {
-  println("SIZE :::: " + data.size)
 
   override private[octopus] def transform[S](transformation: Transformation[T, S]): DataSet[S] =
     new TransformedDataSet(this, transformation)
