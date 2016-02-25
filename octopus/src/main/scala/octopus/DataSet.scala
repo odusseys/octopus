@@ -14,6 +14,8 @@ sealed trait DataSet[T] extends Serializable {
 
   def getContext: SparkContext
 
+  def fetch() = getData
+
   /** Executes all the jobs provided by sending them to the executors for parallelization. */
   def execute[S](jobs: Seq[Iterable[T] => S]): Seq[S] = {
     val nJobs = jobs.length
@@ -32,7 +34,18 @@ sealed trait DataSet[T] extends Serializable {
 
   def groupBy[S](f: T => S) = transform(new GroupBy(f))
 
-  def collect() = getData
+
+  def zip[S](other: DataSet[S]): DataSet[(T, S)] = new ZippedDataSet(this, other)
+
+  def collect[S](f: PartialFunction[T, S]) = transform(new Collect(f))
+
+  def drop(n: Int) = transform(new Drop(n))
+
+  def take(n: Int) = transform(new Take(n))
+
+  def slice(from: Int, to: Int) = transform(new Slice(from, to))
+
+  def zipWithIndex = transform(new ZipWithIndex)
 
 }
 
@@ -48,15 +61,11 @@ class DeployedDataSet[T](data: Iterable[T])(@transient sc: SparkContext) extends
 }
 
 class TransformedDataSet[T, S](origin: DataSet[T], transformation: Transformation[T, S]) extends DataSet[S] {
-  override private[octopus] def transform[U](transformation: Transformation[S, U]): DataSet[U] = {
-    println("TRANSFORMING with " + transformation.getClass)
+  override private[octopus] def transform[U](transformation: Transformation[S, U]): DataSet[U] =
     new TransformedDataSet(origin, this.transformation.andThen(transformation))
-  }
 
-
-  override def getData: Iterable[S] = {
+  override def getData: Iterable[S] =
     transformation.transform(origin.getData.view).force
-  }
 
   override def getContext = origin.getContext
 
@@ -72,6 +81,16 @@ class TextDataSet(file: java.io.File)(@transient sc: SparkContext) extends DataS
   override def getContext: SparkContext = sc
 }
 
+class ZippedDataSet[T, S](first: DataSet[T], second: DataSet[S]) extends DataSet[(T, S)] {
+  require(first.getContext == second.getContext, "Cannot zip two datasets with different Spark contexts !")
+
+  override private[octopus] def transform[U](transformation: Transformation[(T, S), U]): DataSet[U] =
+    new TransformedDataSet(this, transformation)
+
+  override private[octopus] def getData: Iterable[(T, S)] = first.getData.zip(second.getData)
+
+  override def getContext: SparkContext = first.getContext
+}
 
 object DataSet {
 
@@ -79,10 +98,11 @@ object DataSet {
     def reduceByKey(f: (V, V) => V) = data.transform(new ReduceByKey(f))
 
     def groupByKey = data.transform(new GroupByKey)
-  }
 
-  implicit class Deployment(sc: SparkContext) {
-    def deploy[T](data: Iterable[T]): DataSet[T] = new DeployedDataSet(data)(sc)
+    def filterKeys(f: K => Boolean) = data.transform(new FilterKeys(f))
+
+    def mapValues[U](f: V => U) = data.transform(new MapValues(f))
+
   }
 
 }

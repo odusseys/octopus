@@ -19,6 +19,22 @@ class Map[T, S](f: T => S) extends Transformation[T, S] {
   override def transform(data: IterableView[T, Iterable[_]]) = data.map(f)
 }
 
+class Collect[T, S](f: PartialFunction[T, S]) extends Transformation[T, S] {
+  override def transform(data: IterableView[T, Iterable[_]]): IterableView[S, Iterable[_]] = data.collect(f)
+}
+
+class Drop[T](n: Int) extends Transformation[T, T] {
+  override def transform(data: IterableView[T, Iterable[_]]): IterableView[T, Iterable[_]] = data.drop(n)
+}
+
+class Take[T](n: Int) extends Transformation[T, T] {
+  override def transform(data: IterableView[T, Iterable[_]]): IterableView[T, Iterable[_]] = data.take(n)
+}
+
+class Slice[T](from: Int, until: Int) extends Transformation[T, T] {
+  override def transform(data: IterableView[T, Iterable[_]]): IterableView[T, Iterable[_]] = data.slice(from, until)
+}
+
 class FlatMap[T, S](f: T => TraversableOnce[S]) extends Transformation[T, S] {
   override def transform(data: IterableView[T, Iterable[_]]) = data.flatMap(f)
 }
@@ -29,6 +45,11 @@ class Filter[T](f: T => Boolean) extends Transformation[T, T] {
 
 class GroupBy[T, S](f: T => S) extends Transformation[T, (S, Iterable[T])] {
   override def transform(data: IterableView[T, Iterable[_]]) = data.groupBy(f).view
+}
+
+class ZipWithIndex[T] extends Transformation[T, (T, Int)] {
+  override def transform(data: IterableView[T, Iterable[_]]): IterableView[(T, Int), Iterable[_]] =
+    data.zipWithIndex
 }
 
 class ReduceByKey[K, V](reducer: (V, V) => V) extends Transformation[(K, V), (K, V)] {
@@ -48,13 +69,16 @@ class GroupByKey[K, V] extends Transformation[(K, V), (K, Iterable[V])] {
   override def transform(data: IterableView[(K, V), Iterable[_]]) = data.groupBy(_._1).mapValues(_.map(_._2)).view
 }
 
-
-trait LazyTransformation[T, S] extends Serializable {
-  def transform(data: IterableView[T, Iterable[_]]): IterableView[S, Iterable[_]]
+class FilterKeys[K, V](f: K => Boolean) extends Transformation[(K, V), (K, V)] {
+  override def transform(data: IterableView[(K, V), Iterable[_]]): IterableView[(K, V), Iterable[_]] =
+    data.filter { case (k, v) => f(k) }
 }
 
-class LazyMap[T, S](f: T => S) extends LazyTransformation[T, S] {
-  override def transform(data: IterableView[T, Iterable[_]]) = data.map(f)
+class MapValues[K, V, U](f: V => U) extends Transformation[(K, V), (K, U)] {
+  override def transform(data: IterableView[(K, V), Iterable[_]]): IterableView[(K, U), Iterable[_]] =
+    data.map { case (k, v) => (k, f(v)) }
 }
 
-
+object sandbox {
+  val t = Iterable(1, 2, 3).view
+}
