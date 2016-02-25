@@ -1,6 +1,8 @@
-package scala.octopus
+package scala.octopus.examples
 
-import org.apache.spark.{SparkContext, SparkConf}
+import org.apache.spark.{SparkConf, SparkContext}
+
+import scala.octopus.OctopusContext
 
 /**
  * Created by umizrahi on 25/02/2016.

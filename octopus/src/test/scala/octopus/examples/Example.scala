@@ -1,8 +1,9 @@
-package scala.octopus
+package scala.octopus.examples
 
-import main.scala.octopus.DataSet
 import org.apache.log4j.{Level, Logger}
 import org.apache.spark.{SparkConf, SparkContext}
+
+import scala.octopus.OctopusContext
 
 //import scala.collection.immutable.{Iterable, List, Seq}
 
