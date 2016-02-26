@@ -1,4 +1,4 @@
-package main.scala.octopus
+package scala.octopus
 
 import scala.collection.{IterableView, mutable}
 
@@ -77,8 +77,4 @@ class FilterKeys[K, V](f: K => Boolean) extends Transformation[(K, V), (K, V)] {
 class MapValues[K, V, U](f: V => U) extends Transformation[(K, V), (K, U)] {
   override def transform(data: IterableView[(K, V), Iterable[_]]): IterableView[(K, U), Iterable[_]] =
     data.map { case (k, v) => (k, f(v)) }
-}
-
-object sandbox {
-  val t = Iterable(1, 2, 3).view
 }

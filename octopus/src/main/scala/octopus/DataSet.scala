@@ -1,4 +1,4 @@
-package main.scala.octopus
+package scala.octopus
 
 import org.apache.spark.SparkContext
 
@@ -26,8 +26,12 @@ sealed trait DataSet[T] extends Serializable {
   /*Get the data in this DataSet in iterable form. Should trigger transformation computation job. */
   private[octopus] def getData: Iterable[T]
 
+  private[octopus] val id: Int = getContext.register(this)
+
   /** Returns the Spark context object associated with this DataSet */
-  def getContext: SparkContext
+  def getContext: OctopusContext
+
+  def getSparkContext = getContext.getSparkContext
 
   /** Retrieve the data in this DataSet in iterable form. Any pending transformations will
     * be computed. */
@@ -36,8 +40,8 @@ sealed trait DataSet[T] extends Serializable {
   /** Executes all the jobs provided by sending them to the executors for parallelization. */
   def execute[S](jobs: Seq[Iterable[T] => S]): Seq[S] = {
     val nJobs = jobs.length
-    val bcData = getContext.broadcast(this)
-    getContext.parallelize(1 to nJobs, nJobs)
+    val bcData = getContext.getSparkContext.broadcast(this)
+    getSparkContext.parallelize(1 to nJobs, nJobs)
       .mapPartitionsWithIndex { case (i, dat) => Iterator((i, jobs(i)(bcData.value.getData))) }
       .collect()
       .sortBy(_._1).map(_._2).toList
@@ -83,14 +87,16 @@ sealed trait DataSet[T] extends Serializable {
 }
 
 /** Implementation of DataSet which has concrete data attached to it. Only obtained through */
-private[octopus] class DeployedDataSet[T](data: Iterable[T])(@transient sc: SparkContext) extends DataSet[T] {
+private[octopus] class DeployedDataSet[T]
+(data: Iterable[T], oc: OctopusContext) extends DataSet[T] {
 
   override private[octopus] def transform[S](transformation: Transformation[T, S]): DataSet[S] =
     new TransformedDataSet(this, transformation)
 
   override def getData = data
 
-  override def getContext = sc
+  override def getContext = oc
+
 }
 
 private[octopus] class TransformedDataSet[T, S](origin: DataSet[T], transformation: Transformation[T, S]) extends DataSet[S] {
@@ -102,16 +108,18 @@ private[octopus] class TransformedDataSet[T, S](origin: DataSet[T], transformati
 
   override def getContext = origin.getContext
 
+  override private[octopus] val id: Int = origin.id
 }
 
 /*Probably not a good solution at all, may want to import at creation and impose that data is on driver considering that the
 * source of file may not allow concurrent requests at all. */
-private[octopus] class TextDataSet(file: java.io.File)(@transient sc: SparkContext) extends DataSet[String] {
+private[octopus] class TextDataSet(file: java.io.File)(@transient oc: OctopusContext) extends DataSet[String] {
   override private[octopus] def transform[S](transformation: Transformation[String, S]): DataSet[S] = new TransformedDataSet(this, transformation)
 
   override private[octopus] def getData: Iterable[String] = Source.fromFile(file).getLines().toIterable
 
-  override def getContext: SparkContext = sc
+  override def getContext: OctopusContext = oc
+
 }
 
 private[octopus] class ZippedDataSet[T, S](first: DataSet[T], second: DataSet[S]) extends DataSet[(T, S)] {
@@ -122,7 +130,7 @@ private[octopus] class ZippedDataSet[T, S](first: DataSet[T], second: DataSet[S]
 
   override private[octopus] def getData: Iterable[(T, S)] = first.getData.zip(second.getData)
 
-  override def getContext: SparkContext = first.getContext
+  override def getContext: OctopusContext = first.getContext
 }
 
 object DataSet {
