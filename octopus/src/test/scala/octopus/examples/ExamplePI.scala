@@ -7,9 +7,9 @@ import scala.octopus.OctopusContext
 /**
  * Created by umizrahi on 25/02/2016.
  */
-object ExampleMonteCarlo {
+object ExamplePI {
 
-  /* test estimation of PI through monte carlo*/
+  /* test estimation of PI through monte carlo, by using the OctopusContext.executeJobs method*/
   def main(args: Array[String]) {
     import OctopusContext._
     val sc = new SparkContext(new SparkConf().setMaster("local[*]").setAppName("test_mc"))
