@@ -19,7 +19,7 @@ class OctopusContext private(sc: SparkContext) {
 
   def deploy[T](data: Iterable[T]): DataSet[T] = new DeployedDataSet(data, this)
 
-  def textFile(file: java.io.File): DataSet[String] = new TextDataSet(file)(sc)
+  def textFile(file: java.io.File): DataSet[String] = new TextDataSet(file)(this)
 
   def executeJobs[T](jobs: List[() => T]) = {
     val dummy = deploy(Iterable(1))
@@ -100,6 +100,7 @@ object OctopusContext {
     }
   }
 
+  /** Implicit conversion to use octopus context methods on a spark context */
   implicit def sparkToOctopus(sc: SparkContext): OctopusContext = sc.getOctopusContext
 
 }

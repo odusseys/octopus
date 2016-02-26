@@ -1,7 +1,10 @@
 package scala.octopus
 
+import java.util.concurrent.atomic.AtomicReference
+
 import org.apache.spark.SparkContext
 
+import scala.collection.mutable
 import scala.io.Source
 
 /**
@@ -28,6 +31,8 @@ sealed trait DataSet[T] extends Serializable {
 
   private[octopus] val id: Int = getContext.register(this)
 
+  private[octopus] def onDriver = getContext != null
+
   /** Returns the Spark context object associated with this DataSet */
   def getContext: OctopusContext
 
@@ -36,6 +41,10 @@ sealed trait DataSet[T] extends Serializable {
   /** Retrieve the data in this DataSet in iterable form. Any pending transformations will
     * be computed. */
   def fetch() = getData
+
+  def cache(): DataSet[T]
+
+  def unpersist(): DataSet[T]
 
   /** Executes all the jobs provided by sending them to the executors for parallelization. */
   def execute[S](jobs: Seq[Iterable[T] => S]): Seq[S] = {
@@ -86,9 +95,15 @@ sealed trait DataSet[T] extends Serializable {
 
 }
 
+sealed trait UncachedDataSet[T] extends DataSet[T] {
+  override def cache(): DataSet[T] = new CachedDataSet[T](this)
+
+  override def unpersist(): DataSet[T] = this
+}
+
 /** Implementation of DataSet which has concrete data attached to it. Only obtained through */
 private[octopus] class DeployedDataSet[T]
-(data: Iterable[T], oc: OctopusContext) extends DataSet[T] {
+(data: Iterable[T], oc: OctopusContext) extends UncachedDataSet[T] {
 
   override private[octopus] def transform[S](transformation: Transformation[T, S]): DataSet[S] =
     new TransformedDataSet(this, transformation)
@@ -96,10 +111,9 @@ private[octopus] class DeployedDataSet[T]
   override def getData = data
 
   override def getContext = oc
-
 }
 
-private[octopus] class TransformedDataSet[T, S](origin: DataSet[T], transformation: Transformation[T, S]) extends DataSet[S] {
+private[octopus] class TransformedDataSet[T, S](origin: DataSet[T], transformation: Transformation[T, S]) extends UncachedDataSet[S] {
   override private[octopus] def transform[U](transformation: Transformation[S, U]): DataSet[U] =
     new TransformedDataSet(origin, this.transformation.andThen(transformation))
 
@@ -113,7 +127,7 @@ private[octopus] class TransformedDataSet[T, S](origin: DataSet[T], transformati
 
 /*Probably not a good solution at all, may want to import at creation and impose that data is on driver considering that the
 * source of file may not allow concurrent requests at all. */
-private[octopus] class TextDataSet(file: java.io.File)(@transient oc: OctopusContext) extends DataSet[String] {
+private[octopus] class TextDataSet(file: java.io.File)(@transient oc: OctopusContext) extends UncachedDataSet[String] {
   override private[octopus] def transform[S](transformation: Transformation[String, S]): DataSet[S] = new TransformedDataSet(this, transformation)
 
   override private[octopus] def getData: Iterable[String] = Source.fromFile(file).getLines().toIterable
@@ -122,7 +136,7 @@ private[octopus] class TextDataSet(file: java.io.File)(@transient oc: OctopusCon
 
 }
 
-private[octopus] class ZippedDataSet[T, S](first: DataSet[T], second: DataSet[S]) extends DataSet[(T, S)] {
+private[octopus] class ZippedDataSet[T, S](first: DataSet[T], second: DataSet[S]) extends UncachedDataSet[(T, S)] {
   require(first.getContext == second.getContext, "Cannot zip two datasets with different Spark contexts !")
 
   override private[octopus] def transform[U](transformation: Transformation[(T, S), U]): DataSet[U] =
@@ -133,7 +147,65 @@ private[octopus] class ZippedDataSet[T, S](first: DataSet[T], second: DataSet[S]
   override def getContext: OctopusContext = first.getContext
 }
 
+private[octopus] class CachedDataSet[T](origin: DataSet[T]) extends DataSet[T] {
+
+  import DataSet._
+
+  @transient var data = new AtomicReference[Iterable[T]]()
+
+  /*Applies a Transformation object to this DataSet*/
+  override private[octopus] def transform[S](transformation: Transformation[T, S]): DataSet[S] = new TransformedDataSet(this, transformation)
+
+  /*Get the data in this DataSet in iterable form. Should trigger transformation computation job. */
+  override private[octopus] def getData: Iterable[T] = {
+    if (onDriver) {
+      origin.getData
+    } else {
+      val get = data.get()
+      if (get != null) {
+        get
+      } else {
+        synchronized {
+          val dat = dataCache.get(id)
+          dat match {
+            case None =>
+              val built = getData
+              dataCache.put(id, built)
+              built
+            case Some(built) =>
+              data.set(built.asInstanceOf[Iterable[T]])
+              built.asInstanceOf[Iterable[T]]
+          }
+        }
+      }
+    }
+  }
+
+  /** Returns the Spark context object associated with this DataSet */
+  override def getContext: OctopusContext = origin.getContext
+
+  override def cache(): DataSet[T] = this
+
+  override def unpersist(): DataSet[T] = origin //todo MAKE SURE DATA IS ACTUALLY UNPERSISTED FROM WORKER CACHES
+}
+
 object DataSet {
+
+  private[octopus] val dataCache = new DataCache
+
+  private[octopus] class DataCache {
+
+    val cache = new mutable.HashMap[Int, Iterable[_]]
+
+    def put(id: Int, data: Iterable[_]) = synchronized {
+      cache.put(id, data)
+    }
+
+    def get(id: Int) = synchronized {
+      cache.get(id)
+    }
+
+  }
 
   /** Provides additional transformations for key/value DataSets (note : could also implement
     * this through implicit conversion, but not necessary at the moment). */
