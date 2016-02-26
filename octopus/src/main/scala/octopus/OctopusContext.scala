@@ -100,7 +100,7 @@ object OctopusContext {
     }
   }
 
-  /** Implicit conversion to use spark context methods on an octopus context */
+  /** Implicit conversion to use octopus context methods on a spark context */
   implicit def sparkToOctopus(sc: SparkContext): OctopusContext = sc.getOctopusContext
 
 }
