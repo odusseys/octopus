@@ -106,7 +106,7 @@ sealed trait UncachedDataSet[T] extends DataSet[T] {
 
 /** Implementation of DataSet which has concrete data attached to it. Only obtained through */
 private[octopus] class DeployedDataSet[T]
-(data: Iterable[T], oc: OctopusContext) extends UncachedDataSet[T] {
+(data: Iterable[T], @transient oc: OctopusContext) extends UncachedDataSet[T] {
 
   override private[octopus] def transform[S](transformation: Transformation[T, S]): DataSet[S] =
     new TransformedDataSet(this, transformation)
