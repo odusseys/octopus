@@ -99,9 +99,9 @@ sealed trait DataSet[T] extends Serializable {
 }
 
 sealed trait UncachedDataSet[T] extends DataSet[T] {
-  override def getCachedDataSet: DataSet[T] = new CachedDataSet[T](this)
+  override private[octopus] def getCachedDataSet: DataSet[T] = new CachedDataSet[T](this)
 
-  override def unpersist(): Unit = this
+  override def unpersist(): Unit = {}
 }
 
 /** Implementation of DataSet which has concrete data attached to it. Only obtained through */
@@ -185,9 +185,11 @@ private[octopus] class CachedDataSet[T](origin: DataSet[T]) extends DataSet[T] {
   /** Returns the Spark context object associated with this DataSet */
   override def getContext: OctopusContext = origin.getContext
 
-  override def getCachedDataSet: DataSet[T] = this
+  override private[octopus] def getCachedDataSet: DataSet[T] = this
 
-  override def unpersist(): Unit = origin //todo MAKE SURE DATA IS ACTUALLY UNPERSISTED FROM WORKER CACHES
+  override def unpersist(): Unit = {
+    getContext.unregisterFromCache(this)
+  }
 }
 
 object DataSet {

@@ -28,6 +28,7 @@ class OctopusContext private(sc: SparkContext) {
   }
 
   def runJobsOnDataSet[T, S](data: DataSet[T], jobs: Seq[Iterable[T] => S]) = {
+    implicit val cachedIds = cachedRegister.getIds
     val nJobs = jobs.length
     val bcData = getSparkContext.broadcast(data)
     val jobTasks = jobs.map(j => new DeployedTask[Iterable[T] => S](j))
@@ -48,6 +49,10 @@ class OctopusContext private(sc: SparkContext) {
 
   private[octopus] def registerToCache(dataSet: DataSet[_]) = cachedRegister.synchronized {
     cachedRegister.register(dataSet)
+  }
+
+  private[octopus] def unregisterFromCache(dataSet: DataSet[_]) = cachedRegister.synchronized {
+    cachedRegister.unregister(dataSet)
   }
 
 
@@ -78,6 +83,16 @@ object OctopusContext {
       idToData.get(id) match {
         case None => throw new NoSuchElementException("No DataSet has been registered for this id !")
         case Some(x) => x
+      }
+    }
+
+    def unregister(data: DataSet[_]) = synchronized {
+      val id = dataToId.remove(data)
+      id match {
+        case None => throw new NoSuchElementException("This dataset was not cached !")
+        case Some(i) =>
+          idToData.remove(i)
+          id
       }
     }
 
