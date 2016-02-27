@@ -2,9 +2,6 @@ package scala.octopus
 
 import java.util.concurrent.atomic.AtomicReference
 
-import org.apache.spark.SparkContext
-
-import scala.collection.mutable
 import scala.io.Source
 
 /**
@@ -40,21 +37,20 @@ sealed trait DataSet[T] extends Serializable {
 
   /** Retrieve the data in this DataSet in iterable form. Any pending transformations will
     * be computed. */
-  def fetch() = getData
+  def fetch(): Iterable[T] = getData
 
-  def cache(): DataSet[T]
+  def cache(): DataSet[T] = {
+    val cachedData = getCachedDataSet
+    getContext.registerToCache(cachedData)
+    cachedData
+  }
 
-  def unpersist(): DataSet[T]
+  private[octopus] def getCachedDataSet: DataSet[T]
+
+  def unpersist(): Unit
 
   /** Executes all the jobs provided by sending them to the executors for parallelization. */
-  def execute[S](jobs: Seq[Iterable[T] => S]): Seq[S] = {
-    val nJobs = jobs.length
-    val bcData = getContext.getSparkContext.broadcast(this)
-    getSparkContext.parallelize(1 to nJobs, nJobs)
-      .mapPartitionsWithIndex { case (i, dat) => Iterator((i, jobs(i)(bcData.value.getData))) }
-      .collect()
-      .sortBy(_._1).map(_._2).toList
-  }
+  def execute[S](jobs: Seq[Iterable[T] => S]): Seq[S] = getContext.runJobsOnDataSet(this, jobs)
 
   /** Maps the DataSet lazily, by applying the given function to each element of the underlying collection. */
   def map[S](f: T => S) = transform(new Map(f))
@@ -91,14 +87,21 @@ sealed trait DataSet[T] extends Serializable {
 
   /** Returns the number of elements in this DataSet.
     * This will cause all transformations applied to this dataset to be computed. */
-  def size = fetch().size
+  def size() = fetch().size
+
+  /** Same as size, to unify with RDD API */
+  def count() = size()
+
+  /** Returns the first element in this DataSet
+    * This will cause all transformations applied to this dataset to be computed. */
+  def first() = fetch().head
 
 }
 
 sealed trait UncachedDataSet[T] extends DataSet[T] {
-  override def cache(): DataSet[T] = new CachedDataSet[T](this)
+  override def getCachedDataSet: DataSet[T] = new CachedDataSet[T](this)
 
-  override def unpersist(): DataSet[T] = this
+  override def unpersist(): Unit = this
 }
 
 /** Implementation of DataSet which has concrete data attached to it. Only obtained through */
@@ -149,8 +152,6 @@ private[octopus] class ZippedDataSet[T, S](first: DataSet[T], second: DataSet[S]
 
 private[octopus] class CachedDataSet[T](origin: DataSet[T]) extends DataSet[T] {
 
-  import DataSet._
-
   @transient var data = new AtomicReference[Iterable[T]]()
 
   /*Applies a Transformation object to this DataSet*/
@@ -166,11 +167,11 @@ private[octopus] class CachedDataSet[T](origin: DataSet[T]) extends DataSet[T] {
         get
       } else {
         synchronized {
-          val dat = dataCache.get(id)
+          val dat = DataCache.get(id)
           dat match {
             case None =>
               val built = getData
-              dataCache.put(id, built)
+              DataCache.put(id, built)
               built
             case Some(built) =>
               data.set(built.asInstanceOf[Iterable[T]])
@@ -184,28 +185,13 @@ private[octopus] class CachedDataSet[T](origin: DataSet[T]) extends DataSet[T] {
   /** Returns the Spark context object associated with this DataSet */
   override def getContext: OctopusContext = origin.getContext
 
-  override def cache(): DataSet[T] = this
+  override def getCachedDataSet: DataSet[T] = this
 
-  override def unpersist(): DataSet[T] = origin //todo MAKE SURE DATA IS ACTUALLY UNPERSISTED FROM WORKER CACHES
+  override def unpersist(): Unit = origin //todo MAKE SURE DATA IS ACTUALLY UNPERSISTED FROM WORKER CACHES
 }
 
 object DataSet {
 
-  private[octopus] val dataCache = new DataCache
-
-  private[octopus] class DataCache {
-
-    val cache = new mutable.HashMap[Int, Iterable[_]]
-
-    def put(id: Int, data: Iterable[_]) = synchronized {
-      cache.put(id, data)
-    }
-
-    def get(id: Int) = synchronized {
-      cache.get(id)
-    }
-
-  }
 
   /** Provides additional transformations for key/value DataSets (note : could also implement
     * this through implicit conversion, but not necessary at the moment). */
