@@ -2,6 +2,8 @@ package scala.octopus
 
 import java.util.concurrent.atomic.AtomicReference
 
+import org.apache.log4j.Logger
+
 import scala.io.Source
 
 /**
@@ -28,7 +30,7 @@ sealed trait DataSet[T] extends Serializable {
 
   private[octopus] val id: Int = getContext.register(this)
 
-  private[octopus] def onDriver = getContext != null
+  @deprecated private[octopus] def onDriver = getContext != null
 
   /** Returns the Spark context object associated with this DataSet */
   def getContext: OctopusContext
@@ -111,7 +113,9 @@ private[octopus] class DeployedDataSet[T]
   override private[octopus] def transform[S](transformation: Transformation[T, S]): DataSet[S] =
     new TransformedDataSet(this, transformation)
 
-  override def getData = data
+  override def getData = {
+    data
+  }
 
   override def getContext = oc
 }
@@ -159,27 +163,25 @@ private[octopus] class CachedDataSet[T](origin: DataSet[T]) extends DataSet[T] {
 
   /*Get the data in this DataSet in iterable form. Should trigger transformation computation job. */
   override private[octopus] def getData: Iterable[T] = {
-    if (onDriver) {
-      origin.getData
+    val get = data.get()
+    if (get != null) {
+      get
     } else {
-      val get = data.get()
-      if (get != null) {
-        get
-      } else {
-        DataCache.synchronized {
-          DataCache.get(id) match {
-            case None =>
-              val built = origin.getData
-              DataCache.put(id, built)
-              data.set(built)
-              built
-            case Some(built) =>
-              data.set(built.asInstanceOf[Iterable[T]])
-              built.asInstanceOf[Iterable[T]]
-          }
+      DataCache.synchronized {
+        DataCache.get(id) match {
+          case None =>
+            val built = origin.getData
+            DataCache.put(id, built)
+            data.set(built)
+            built
+          case Some(built: Iterable[T]) =>
+            data.set(built)
+            built
+          case _ => throw new IllegalStateException("Requestion cached data of the wrong type")
         }
       }
     }
+
   }
 
   /** Returns the Spark context object associated with this DataSet */
