@@ -23,6 +23,8 @@ class OctopusContext private(sc: SparkContext) {
 
   def textFile(file: java.io.File): DataSet[String] = new TextDataSet(file)(this)
 
+  private val jobExecutor = Executors.newSingleThreadExecutor()
+
   def runJobs[T](jobs: Seq[() => T]) = {
     val dummy = deploy(Iterable(1))
     val mappedJobs = jobs.map { job => (i: Iterable[Int]) => job() }
@@ -33,8 +35,6 @@ class OctopusContext private(sc: SparkContext) {
     submitJobsOnDataSet(data, jobs).get()
   }
 
-  private val executor = Executors.newSingleThreadExecutor()
-
   def submitJobs[T](jobs: Seq[() => T]) = {
     val dummy = deploy(Iterable(1))
     val mappedJobs = jobs.map { job => (i: Iterable[Int]) => job() }
@@ -42,7 +42,7 @@ class OctopusContext private(sc: SparkContext) {
   }
 
   def submitJobsOnDataSet[T, S](data: DataSet[T], jobs: Seq[Iterable[T] => S]) = {
-    executor.submit(new Callable[Seq[S]] {
+    jobExecutor.submit(new Callable[Seq[S]] {
       override def call(): Seq[S] = {
         implicit val cachedIds = cachedRegister.getIds
         val nJobs = jobs.length

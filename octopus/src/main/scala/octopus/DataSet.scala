@@ -39,7 +39,7 @@ sealed trait DataSet[T] extends Serializable {
     * be computed. */
   def fetch(): Iterable[T] = getData
 
-  def cache(): DataSet[T] = {
+  final def cache(): DataSet[T] = {
     val cachedData = getCachedDataSet
     getContext.registerToCache(cachedData)
     cachedData
@@ -166,12 +166,12 @@ private[octopus] class CachedDataSet[T](origin: DataSet[T]) extends DataSet[T] {
       if (get != null) {
         get
       } else {
-        synchronized {
-          val dat = DataCache.get(id)
-          dat match {
+        DataCache.synchronized {
+          DataCache.get(id) match {
             case None =>
-              val built = getData
+              val built = origin.getData
               DataCache.put(id, built)
+              data.set(built)
               built
             case Some(built) =>
               data.set(built.asInstanceOf[Iterable[T]])

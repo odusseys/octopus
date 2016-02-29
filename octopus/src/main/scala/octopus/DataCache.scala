@@ -18,7 +18,7 @@ private[octopus] object DataCache {
   }
 
   def clean(activeIds: List[Int]) = synchronized {
-    cache.keySet -- activeIds foreach cache.remove
+    (cache.keySet -- activeIds) foreach cache.remove
   }
 
 
