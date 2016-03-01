@@ -24,8 +24,8 @@ object ExamplePI {
       (hits, n.toDouble)
     }
 
-    val jobs = (1 to 10) map { _ => job(10000000) _ } toList
-    val results = sc.getOctopusContext.executeJobs(jobs).toList
+    val jobs = (1 to 10) map { _ => job(1000000) _ } toList
+    val results = sc.getOctopusContext.runJobs(jobs).toList
     val (hits,total) = results.foldLeft((0.0,0.0)) { case ((u, v), (up, vp)) => (u + up, v + vp) }
     println(s"PI is approximately ${4 * hits/total}")
   }

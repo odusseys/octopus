@@ -1,9 +1,6 @@
 package scala.octopus
 
-import main.scala.octopus._
 import org.scalatest.FunSuite
-
-import scala.collection.IterableView
 
 /**
  * Created by umizrahi on 24/02/2016.
@@ -29,7 +26,7 @@ class TransformationsTest extends FunSuite {
 
   /* tests for empty views*/
   test("Mapping an empty view should return an empty view") {
-    assert(new Map(mapper).transform(empty).isEmpty)
+    assert(new MapTransformation(mapper).transform(empty).isEmpty)
   }
 
   test("Filtering an empty view should return an empty view") {
@@ -78,7 +75,7 @@ class TransformationsTest extends FunSuite {
 
   /* tests for synthetic data, non-keyed*/
   test("Map should act like map") {
-    assert(new Map(mapper).transform(dat).force.zip(dat.force.map(mapper)).forall { case (i, j) => i == j })
+    assert(new MapTransformation(mapper).transform(dat).force.zip(dat.force.map(mapper)).forall { case (i, j) => i == j })
   }
 
   test("Filter should act like filter") {

@@ -1,5 +1,8 @@
 package scala.octopus
 
+import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.{Callable, Executors}
+
 import org.apache.spark.SparkContext
 
 import scala.collection.mutable
@@ -21,49 +24,64 @@ class OctopusContext private(sc: SparkContext) {
 
   def textFile(file: java.io.File): DataSet[String] = new TextDataSet(file)(this)
 
-  def executeJobs[T](jobs: List[() => T]) = {
+  private val jobExecutor = Executors.newSingleThreadExecutor()
+
+  def runJobs[T](jobs: Seq[() => T]) = {
     val dummy = deploy(Iterable(1))
     val mappedJobs = jobs.map { job => (i: Iterable[Int]) => job() }
-    dummy.execute(mappedJobs)
+    runJobsOnDataSet(dummy, mappedJobs)
+  }
+
+  def runJobsOnDataSet[T, S](data: DataSet[T], jobs: Seq[Iterable[T] => S]) = {
+    submitJobsOnDataSet(data, jobs).get()
+  }
+
+  def submitJobs[T](jobs: Seq[() => T]) = {
+    val dummy = deploy(Iterable(1))
+    val mappedJobs = jobs.map { job => (i: Iterable[Int]) => job() }
+    submitJobsOnDataSet(dummy, mappedJobs)
+  }
+
+  def submitJobsOnDataSet[T, S](data: DataSet[T], jobs: Seq[Iterable[T] => S]) = {
+    jobExecutor.submit(new Callable[Seq[S]] {
+      override def call(): Seq[S] = {
+        implicit val cachedIds = cachedRegister.getRegistrationStatuses
+        val nJobs = jobs.length
+        val bcData = getSparkContext.broadcast(data)
+        val jobTasks = jobs.map(j => new DeployedTask[Iterable[T] => S](j))
+        getSparkContext.parallelize(1 to nJobs, nJobs)
+          .mapPartitionsWithIndex { case (i, dat) =>
+          Iterator((i, jobTasks(i).getTask(bcData.value.getData)))
+        }
+          .collect()
+          .sortBy(_._1).map(_._2).toSeq
+      }
+    })
   }
 
   private val dataSetRegister = new Register
+  private val cachedRegister = new Register
 
   private[octopus] def register(dataSet: DataSet[_]) = dataSetRegister.synchronized {
     dataSetRegister.register(dataSet)
   }
 
+  private[octopus] def registerToCache(dataSet: DataSet[_]) = cachedRegister.synchronized {
+    val id = cachedRegister.register(dataSet.id, dataSet)
+    id
+  }
+
+  private[octopus] def unregisterFromCache(dataSet: DataSet[_]) = cachedRegister.synchronized {
+    val id = cachedRegister.unregister(dataSet)
+    id
+  }
+
+
 }
 
 object OctopusContext {
 
-  private class Register {
-    private val dataToId = new mutable.HashMap[DataSet[_], Int]
-    private val idToData = new mutable.HashMap[Int, DataSet[_]]
 
-    def register(data: DataSet[_]) = synchronized {
-      if (dataToId.contains(data)) throw new IllegalStateException("Cannot register dataset more than once !")
-      val id = dataToId.size
-      dataToId.put(data, id)
-      idToData.put(id, data)
-      id
-    }
-
-    def getId(data: DataSet[_]) = synchronized {
-      dataToId.get(data) match {
-        case None => throw new NoSuchElementException("DataSet has not been registered yet !")
-        case Some(x) => x
-      }
-    }
-
-    def getDataSet(id: Int) = synchronized {
-      idToData.get(id) match {
-        case None => throw new NoSuchElementException("No DataSet has been registered for this id !")
-        case Some(x) => x
-      }
-    }
-
-  }
 
   private class ContextMapping() {
     var sparkContext: SparkContext = null

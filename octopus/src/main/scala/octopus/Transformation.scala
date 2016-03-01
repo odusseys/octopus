@@ -15,7 +15,7 @@ class AndThen[S, T, U](first: Transformation[S, T], second: Transformation[T, U]
   override def transform(data: IterableView[S, Iterable[_]]) = second.transform(first.transform(data))
 }
 
-class Map[T, S](f: T => S) extends Transformation[T, S] {
+class MapTransformation[T, S](f: T => S) extends Transformation[T, S] {
   override def transform(data: IterableView[T, Iterable[_]]) = data.map(f)
 }
 
