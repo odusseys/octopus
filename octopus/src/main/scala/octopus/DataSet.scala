@@ -55,7 +55,7 @@ sealed trait DataSet[T] extends Serializable {
   def execute[S](jobs: Seq[Iterable[T] => S]): Seq[S] = getContext.runJobsOnDataSet(this, jobs)
 
   /** Maps the DataSet lazily, by applying the given function to each element of the underlying collection. */
-  def map[S](f: T => S) = transform(new Map(f))
+  def map[S](f: T => S) = transform(new MapTransformation(f))
 
   /** Filters the DataSet lazily, by applying the given predicate to each element of the underlying collection. */
   def filter(f: T => Boolean) = transform(new Filter(f))

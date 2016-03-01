@@ -7,7 +7,6 @@ import scala.collection.mutable
  */
 private[octopus] object DataCache {
 
-
   private val cache = new mutable.HashMap[Int, Iterable[_]]
 
   def put(id: Int, data: Iterable[_]) = synchronized {
@@ -22,9 +21,8 @@ private[octopus] object DataCache {
     cache.keys.toList
   }
 
-  def clean(activeIds: List[Int]) = synchronized {
-    (cache.keySet -- activeIds) foreach cache.remove
+  def removeAll(ids: Iterable[Int]) = synchronized {
+    ids foreach cache.remove
   }
-
 
 }

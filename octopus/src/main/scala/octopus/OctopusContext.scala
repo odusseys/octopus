@@ -1,5 +1,6 @@
 package scala.octopus
 
+import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.{Callable, Executors}
 
 import org.apache.spark.SparkContext
@@ -44,13 +45,13 @@ class OctopusContext private(sc: SparkContext) {
   def submitJobsOnDataSet[T, S](data: DataSet[T], jobs: Seq[Iterable[T] => S]) = {
     jobExecutor.submit(new Callable[Seq[S]] {
       override def call(): Seq[S] = {
-        implicit val cachedIds = cachedRegister.getIds
+        implicit val cachedIds = cachedRegister.getRegistrationStatuses
         val nJobs = jobs.length
         val bcData = getSparkContext.broadcast(data)
         val jobTasks = jobs.map(j => new DeployedTask[Iterable[T] => S](j))
         getSparkContext.parallelize(1 to nJobs, nJobs)
           .mapPartitionsWithIndex { case (i, dat) =>
-          Iterator((i, jobTasks(i).getTask()(bcData.value.getData)))
+          Iterator((i, jobTasks(i).getTask(bcData.value.getData)))
         }
           .collect()
           .sortBy(_._1).map(_._2).toSeq
@@ -66,11 +67,13 @@ class OctopusContext private(sc: SparkContext) {
   }
 
   private[octopus] def registerToCache(dataSet: DataSet[_]) = cachedRegister.synchronized {
-    cachedRegister.register(dataSet)
+    val id = cachedRegister.register(dataSet.id, dataSet)
+    id
   }
 
   private[octopus] def unregisterFromCache(dataSet: DataSet[_]) = cachedRegister.synchronized {
-    cachedRegister.unregister(dataSet)
+    val id = cachedRegister.unregister(dataSet)
+    id
   }
 
 
@@ -78,47 +81,7 @@ class OctopusContext private(sc: SparkContext) {
 
 object OctopusContext {
 
-  private class Register {
-    private val dataToId = new mutable.HashMap[DataSet[_], Int]
-    private val idToData = new mutable.HashMap[Int, DataSet[_]]
 
-    def register(data: DataSet[_]) = synchronized {
-      if (dataToId.contains(data)) throw new IllegalStateException("Cannot register dataset more than once !")
-      val id = dataToId.size
-      dataToId.put(data, id)
-      idToData.put(id, data)
-      id
-    }
-
-    def getId(data: DataSet[_]) = synchronized {
-      dataToId.get(data) match {
-        case None => throw new NoSuchElementException("DataSet has not been registered yet !")
-        case Some(x) => x
-      }
-    }
-
-    def getDataSet(id: Int) = synchronized {
-      idToData.get(id) match {
-        case None => throw new NoSuchElementException("No DataSet has been registered for this id !")
-        case Some(x) => x
-      }
-    }
-
-    def unregister(data: DataSet[_]) = synchronized {
-      val id = dataToId.remove(data)
-      id match {
-        case None => throw new NoSuchElementException("This dataset was not cached !")
-        case Some(i) =>
-          idToData.remove(i)
-          id
-      }
-    }
-
-    def getIds = synchronized {
-      idToData.keys.toList
-    }
-
-  }
 
   private class ContextMapping() {
     var sparkContext: SparkContext = null

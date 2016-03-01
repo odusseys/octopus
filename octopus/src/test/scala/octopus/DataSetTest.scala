@@ -33,14 +33,15 @@ class DataSetTest extends FunSuite {
       .forall { case (u, v) => u == v })
   }
 
-  test("Caching should speedup construction") {
+  /** Tests for cacing*/
+  test("Caching should speedup construction and unpersisting should clear cache after a job") {
 
     Logger.getLogger("org").setLevel(Level.ERROR)
     Logger.getLogger("akka").setLevel(Level.ERROR)
 
     val slowToBuild = deployed.map(i => {
       var t = 0
-      (1 to 100000) foreach { _ => t = t + 1 }
+      (1 to 10000) foreach { _ => t = t + 1 }
       i + t
     })
 
@@ -62,6 +63,14 @@ class DataSetTest extends FunSuite {
 
 
     assert(slowRslts.flatten.zip(fastResults.flatten).forall { case (u, v) => u == v })
+
+    val nBefore = testContext.runJobs(Seq(() => DataCache.active().size)).head
+    assert(nBefore == 1)
+
+    cached.unpersist()
+
+    val nAfter = testContext.runJobs(Seq(() => DataCache.active().size)).head
+    assert(nAfter == 0)
 
   }
 
