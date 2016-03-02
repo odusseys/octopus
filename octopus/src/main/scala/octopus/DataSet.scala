@@ -2,8 +2,6 @@ package scala.octopus
 
 import java.util.concurrent.atomic.AtomicReference
 
-import org.apache.log4j.Logger
-
 import scala.io.Source
 
 /**
@@ -28,19 +26,20 @@ sealed trait DataSet[T] extends Serializable {
   /*Get the data in this DataSet in iterable form. Should trigger transformation computation job. */
   private[octopus] def getData: Iterable[T]
 
+  /*Register the dataset on the spark context*/
   private[octopus] val id: Int = getContext.register(this)
 
-  @deprecated private[octopus] def onDriver = getContext != null
-
-  /** Returns the Spark context object associated with this DataSet */
+  /** Returns the Spark context object associated with this DataSet. This is always a valid context. */
   def getContext: OctopusContext
-
-  def getSparkContext = getContext.getSparkContext
 
   /** Retrieve the data in this DataSet in iterable form. Any pending transformations will
     * be computed. */
   def fetch(): Iterable[T] = getData
 
+
+  /** Cache the dataset in memory on all workers.
+    * Note that the caching will not be instantly triggered by calling this method : instead,
+    * the next time this dataset will be computed (by runnign jobs on it), it will be cached. */
   final def cache(): DataSet[T] = {
     val cachedData = getCachedDataSet
     getContext.registerToCache(cachedData)
@@ -49,6 +48,10 @@ sealed trait DataSet[T] extends Serializable {
 
   private[octopus] def getCachedDataSet: DataSet[T]
 
+  /** Unpersists the dataset if it was cached. If it was not cached, has no effect.
+    * Note that this does not immediately unpersisty the data in local caches ; instead, the
+    * caches will be cleared the next time a job is executed on the associated OctopusContext
+    * (or any associated DataSet's) */
   def unpersist(): Unit
 
   /** Executes all the jobs provided by sending them to the executors for parallelization. */
@@ -100,13 +103,13 @@ sealed trait DataSet[T] extends Serializable {
 
 }
 
-sealed trait UncachedDataSet[T] extends DataSet[T] {
+private[octopus] sealed trait UncachedDataSet[T] extends DataSet[T] {
   override private[octopus] def getCachedDataSet: DataSet[T] = new CachedDataSet[T](this)
 
   override def unpersist(): Unit = {}
 }
 
-/** Implementation of DataSet which has concrete data attached to it. Only obtained through */
+/* Implementation of DataSet which has concrete data attached to it. Only obtained through OctopusContext.deploy*/
 private[octopus] class DeployedDataSet[T]
 (data: Iterable[T], @transient oc: OctopusContext) extends UncachedDataSet[T] {
 
@@ -143,6 +146,7 @@ private[octopus] class TextDataSet(file: java.io.File)(@transient oc: OctopusCon
 
 }
 
+/*DataSet representing two zipped DataSet's. This allows to zip lazily.*/
 private[octopus] class ZippedDataSet[T, S](first: DataSet[T], second: DataSet[S]) extends UncachedDataSet[(T, S)] {
   require(first.getContext == second.getContext, "Cannot zip two datasets with different Spark contexts !")
 
@@ -154,9 +158,11 @@ private[octopus] class ZippedDataSet[T, S](first: DataSet[T], second: DataSet[S]
   override def getContext: OctopusContext = first.getContext
 }
 
+/*Cached datasets. Once it is computed it is 1) stored in the cache and 2) stored in the object (on workers).
+* */
 private[octopus] class CachedDataSet[T](origin: DataSet[T]) extends DataSet[T] {
 
-  @transient var data = new AtomicReference[Iterable[T]]()
+  @transient var data = new AtomicReference[Iterable[T]]() //this layer of caching may not be necessary actually.
 
   /*Applies a Transformation object to this DataSet*/
   override private[octopus] def transform[S](transformation: Transformation[T, S]): DataSet[S] = new TransformedDataSet(this, transformation)

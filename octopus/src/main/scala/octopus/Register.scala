@@ -8,7 +8,7 @@ import scala.collection.mutable
 /**
  * Created by umizrahi on 01/03/2016.
  */
-class Register {
+private[octopus] class Register {
 
   import scala.octopus.Register._
 
