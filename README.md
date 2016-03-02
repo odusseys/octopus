@@ -20,17 +20,19 @@ val transformed: DataSet[(Int,Int)] = data.map(_ + 1).filter(_ % 2 == 0)
     .map(i => (i, i + 1))
     .reduceByKey(_ * _) //transformations not computed yet - data not even deployed yet 
 
-val jobs = (1 to 10).map(i => (it: Iterable[(Int,Int)]) => it.map(_._2 + i).sum).toSeq
+def job(i: Int)(data: Iterable[(Int,Int)]) = data.map(_._2 + i).sum
+
+val jobs = (1 to 10).map(i => job(i) _).toSeq
 val results: Seq[Int] = data.executeJobs(jobs)
 ```
 
 Octopus supports caching of the replicated data, for ulterior reuse. 
 ```
-val cached = data.cache()
-cached.unpersist()
+val cached = data.cache() //will store the data when a job is performed on it
+cached.unpersist() //will remove the data from the cache when any job is performed
 ```
 
-You can also launch jobs asynchronously : 
+You can also launch jobs asynchronously (although only one batch of jobs will be running at a time) : 
 ```
 val results: Future[Seq[Int]] = data.submitJobs(jobs)
 ```
