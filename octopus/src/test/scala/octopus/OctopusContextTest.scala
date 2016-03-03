@@ -41,7 +41,7 @@ class OctopusContextTest extends FunSuite {
   test("Should be able to run multiple jobs concurrently, and shorter jobs should finish earlier") {
     val jobs = Seq(job _, job _)
     val results1 = testContext.submitJobs(jobs)
-    val results2 = testContext.submitJobs(Seq())
+    val results2 = testContext.submitJobs(Seq[() => Int]())
     var done1 = false
     var done2 = false
     var done1Time = 0L
