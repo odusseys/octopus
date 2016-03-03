@@ -3,6 +3,7 @@ package scala.octopus
 import scala.collection.mutable
 
 /**
+ * Cache to store data on workers. Is added to by CachedDataSet's and cleared by subsequent DeployedTask's
  * Created by umizrahi on 27/02/2016.
  */
 private[octopus] object DataCache {

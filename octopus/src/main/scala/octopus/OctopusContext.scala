@@ -1,11 +1,12 @@
 package scala.octopus
 
-import java.util.concurrent.atomic.AtomicInteger
-import java.util.concurrent.{Callable, Executors}
+import java.util.concurrent
+import java.util.concurrent.{Future, Callable, Executors}
 
 import org.apache.spark.SparkContext
 
-import scala.collection.mutable
+import scala.collection.{GenSeq, GenSeqLike, TraversableLike}
+import scala.collection.generic.CanBuildFrom
 
 
 /**
@@ -16,47 +17,67 @@ import scala.collection.mutable
  */
 class OctopusContext private(sc: SparkContext) {
 
-  import scala.octopus.OctopusContext._
-
   def getSparkContext = sc
 
   def deploy[T](data: Iterable[T]): DataSet[T] = new DeployedDataSet(data, this)
 
   def textFile(file: java.io.File): DataSet[String] = new TextDataSet(file)(this)
 
-  private val jobExecutor = Executors.newSingleThreadExecutor()
+  private val jobExecutor = Executors.newCachedThreadPool()
 
-  def runJobs[T](jobs: Seq[() => T]) = {
+  // private val jobExecutor = Executors.newSingleThreadExecutor()
+
+  def runJobs[S, Repr[A] <: GenSeqLike[A, Repr[A]], That, That2]
+  (jobs: Repr[() => S])
+  (implicit bf: CanBuildFrom[Repr[Iterable[Int] => S], S, That],
+   bf2: CanBuildFrom[Repr[() => S], Iterable[Int] => S, Repr[Iterable[Int] => S]]
+    )
+  : That = {
     val dummy = deploy(Iterable(1))
     val mappedJobs = jobs.map { job => (i: Iterable[Int]) => job() }
     runJobsOnDataSet(dummy, mappedJobs)
   }
 
-  def runJobsOnDataSet[T, S](data: DataSet[T], jobs: Seq[Iterable[T] => S]) = {
+  def runJobsOnDataSet[T, S, Repr[A] <: GenSeqLike[A, Repr[A]], That]
+  (data: DataSet[T], jobs: Repr[Iterable[T] => S])
+  (implicit bf: CanBuildFrom[Repr[Iterable[T] => S], S, That]): That = {
     submitJobsOnDataSet(data, jobs).get()
   }
 
-  def submitJobs[T](jobs: Seq[() => T]) = {
+  def submitJobs[S, Repr[A] <: GenSeqLike[A, Repr[A]], That]
+  (jobs: Repr[() => S])
+  (implicit bf: CanBuildFrom[Repr[Iterable[Int] => S], S, That],
+   bf2: CanBuildFrom[Repr[() => S], Iterable[Int] => S, Repr[Iterable[Int] => S]])
+  : Future[That] = {
     val dummy = deploy(Iterable(1))
     val mappedJobs = jobs.map { job => (i: Iterable[Int]) => job() }
     submitJobsOnDataSet(dummy, mappedJobs)
   }
 
-  def submitJobsOnDataSet[T, S](data: DataSet[T], jobs: Seq[Iterable[T] => S]) = {
-    jobExecutor.submit(new Callable[Seq[S]] {
-      override def call(): Seq[S] = {
-        implicit val cachedIds = cachedRegister.getRegistrationStatuses
-        val nJobs = jobs.length
-        val bcData = getSparkContext.broadcast(data)
-        val jobTasks = jobs.map(j => new DeployedTask[Iterable[T] => S](j))
-        getSparkContext.parallelize(1 to nJobs, nJobs)
-          .mapPartitionsWithIndex { case (i, dat) =>
-          Iterator((i, jobTasks(i).getTask(bcData.value.getData)))
+  def submitJobsOnDataSet[T, S, Repr[A] <: GenSeqLike[A, Repr[A]], That]
+  (data: DataSet[T], jobs: Repr[Iterable[T] => S])
+  (implicit bf: CanBuildFrom[Repr[Iterable[T] => S], S, That]): Future[That] = {
+    if (jobs.isEmpty) {
+      jobExecutor.submit(new Callable[That] {
+        override def call(): That = jobs.map(_.asInstanceOf[S])
+      })
+    } else {
+      jobExecutor.submit(new Callable[That] {
+        override def call(): That = {
+          implicit val cachedIds = cachedRegister.getRegistrationStatuses
+          val nJobs = jobs.size
+          val bcData = getSparkContext.broadcast(data)
+          val jobTasks = jobs.toArray.map(j => new DeployedTask(j))
+          val tempResults = getSparkContext.parallelize(1 to nJobs, nJobs)
+            .mapPartitionsWithIndex { case (i, dat) =>
+            Iterator((i, jobTasks(i).getTask(bcData.value.getData)))
+          }
+            .collect()
+            .sortBy(_._1).map { case (i, res) => (jobs(i), res) }.toMap
+          jobs.map(tempResults.apply)
         }
-          .collect()
-          .sortBy(_._1).map(_._2).toSeq
-      }
-    })
+      })
+    }
   }
 
   private val dataSetRegister = new Register
@@ -80,7 +101,6 @@ class OctopusContext private(sc: SparkContext) {
 }
 
 object OctopusContext {
-
 
 
   private class ContextMapping() {
@@ -117,9 +137,6 @@ object OctopusContext {
       oc
     }
   }
-
-  /** Implicit conversion to use octopus context methods on a spark context */
-  implicit def sparkToOctopus(sc: SparkContext): OctopusContext = sc.getOctopusContext
 
 }
 

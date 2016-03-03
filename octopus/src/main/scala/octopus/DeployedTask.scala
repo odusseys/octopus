@@ -7,8 +7,12 @@ import scala.octopus.Register._
  */
 private[octopus] class DeployedTask[T](task: T)(implicit cacheSatuses: Map[Int, RegistrationStatus]) extends Serializable {
 
-  def getTask: T = DataCache.synchronized {
+  private def performDeployedActions() = {
     DataCache.removeAll(cacheSatuses.collect { case (u, stat) if stat == Unregistered => u })
+  }
+
+  def getTask: T = DataCache.synchronized {
+    performDeployedActions()
     task
   }
 }
