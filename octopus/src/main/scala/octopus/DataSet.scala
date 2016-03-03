@@ -57,6 +57,10 @@ sealed trait DataSet[T] extends Serializable {
   /** Executes all the jobs provided by sending them to the executors for parallelization. */
   def execute[S](jobs: Seq[Iterable[T] => S]): Seq[S] = getContext.runJobsOnDataSet(this, jobs)
 
+  /** Executes all the jobs provided asynchronously by sending them to the executors for parallelization.
+    * Results are obtained as a java Future */
+  def submit[S](jobs: Seq[Iterable[T] => S]): java.util.concurrent.Future[Seq[S]] = getContext.submitJobsOnDataSet(this, jobs)
+
   /** Maps the DataSet lazily, by applying the given function to each element of the underlying collection. */
   def map[S](f: T => S) = transform(new MapTransformation(f))
 
