@@ -1,5 +1,7 @@
 # octopus
 
+![alt tag](https://raw.githubusercontent.com/odusseys/octopus/master/octopus-logo.png)
+
 A framework for job distribution and data replication on large clusters of machines, based off Apache Spark, taking advantage of Spark's 
 resilience and simple framework for task distribution. 
 
