@@ -1,14 +1,14 @@
 # octopus
 
-![alt tag](https://raw.githubusercontent.com/odusseys/octopus/master/octopus-logo.png)
+![alt tag](https://raw.githubusercontent.com/odusseys/octopus/master/octopus-header.png)
 
 A framework for job distribution and data replication on large clusters of machines, based off Apache Spark, taking advantage of Spark's 
 resilience and simple framework for task distribution. 
 
 ```
 import OctopusContext._
-val sparContext: SparkContext = ???
-val oc = sparkContext.getOctopusContext()
+val sc: SparkContext = ???
+val oc = sc.getOctopusContext()
 ```
 
 Octopus' abstraction for data replication is the DataSet class, which represents data replicated on all machines in the cluster. 
