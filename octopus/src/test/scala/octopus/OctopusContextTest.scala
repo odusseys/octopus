@@ -2,8 +2,6 @@ package scala.octopus
 
 import org.scalatest.FunSuite
 
-import scala.octopus.OctopusContextTest
-
 /**
  * Created by umizrahi on 02/03/2016.
  */

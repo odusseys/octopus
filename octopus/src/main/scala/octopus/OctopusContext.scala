@@ -80,8 +80,8 @@ class OctopusContext private(sc: SparkContext) {
     }
   }
 
-  private val dataSetRegister = new Register
-  private val cachedRegister = new Register
+  private[octopus] val dataSetRegister = new Register
+  private[octopus] val cachedRegister = new Register
 
   private[octopus] def register(dataSet: DataSet[_]) = dataSetRegister.synchronized {
     dataSetRegister.register(dataSet)
@@ -96,7 +96,6 @@ class OctopusContext private(sc: SparkContext) {
     val id = cachedRegister.unregister(dataSet)
     id
   }
-
 
 }
 

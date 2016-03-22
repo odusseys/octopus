@@ -162,6 +162,34 @@ private[octopus] class ZippedDataSet[T, S](first: DataSet[T], second: DataSet[S]
   override def getContext: OctopusContext = first.getContext
 }
 
+private[octopus] class InnerJoinedDataSet[T, S, U](first: DataSet[(T, S)], second: DataSet[(T, U)]) extends UncachedDataSet[(T, (S, U))] {
+  require(first.getContext == second.getContext, "Cannot zip two datasets with different Spark contexts !")
+
+  /*Applies a Transformation object to this DataSet*/
+  override private[octopus] def transform[V](transformation: Transformation[(T, (S, U)), V]): DataSet[V] =
+    new TransformedDataSet(this, transformation)
+
+  /*Get the data in this DataSet in iterable form. Should trigger transformation computation job. */
+  override private[octopus] def getData: Iterable[(T, (S, U))] = innerJoin(first.getData, second.getData)
+
+  /** Returns the Spark context object associated with this DataSet. This is always a valid context. */
+  override def getContext: OctopusContext = first.getContext
+}
+
+private[octopus] class LeftOuterJoinedDataSet[T, S, U](first: DataSet[(T, S)], second: DataSet[(T, U)]) extends UncachedDataSet[(T, (S, Option[U]))] {
+  require(first.getContext == second.getContext, "Cannot zip two datasets with different Spark contexts !")
+
+  /*Applies a Transformation object to this DataSet*/
+  override private[octopus] def transform[V](transformation: Transformation[(T, (S, Option[U])), V]): DataSet[V] =
+    new TransformedDataSet(this, transformation)
+
+  /*Get the data in this DataSet in iterable form. Should trigger transformation computation job. */
+  override private[octopus] def getData: Iterable[(T, (S, Option[U]))] = leftOuterJoin(first.getData, second.getData)
+
+  /** Returns the Spark context object associated with this DataSet. This is always a valid context. */
+  override def getContext: OctopusContext = first.getContext
+}
+
 /*Cached datasets. Once it is computed it is 1) stored in the cache and 2) stored in the object (on workers).
 * */
 private[octopus] class CachedDataSet[T](origin: DataSet[T]) extends DataSet[T] {
@@ -224,6 +252,17 @@ object DataSet {
 
     /** Lazily maps values in this DataSet according to the given function */
     def mapValues[U](f: V => U) = data.transform(new MapValues(f))
+
+    /** Lazily joins two key-value datasets on their keys. At key level, multiple joined elements will be
+      * treated as a cartesian product. */
+    def join[W](other: DataSet[(K, W)]): DataSet[(K, (V, W))] = new InnerJoinedDataSet(data, other)
+
+    /** Lazily left-outer-joins two key-value datasets on their keys. Values from the second DataSet will
+      * be wrapped in an Option, corresponding to whether the key was found.
+      * If a key is missing in the second dataset, it will still be present in the result,
+      * but the element corresponding to the second dataset will be None
+      * At key level, multiple joined elements will be treated as a cartesian product. */
+    def outerJoin[W](other: DataSet[(K, W)]): DataSet[(K, (V, Option[W]))] = new LeftOuterJoinedDataSet(data, other)
 
   }
 
